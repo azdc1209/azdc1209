@@ -364,23 +364,21 @@ export class StarterPackService {
   }
 
   static async hasActivePaidSubscription(userId: string): Promise<boolean> {
-  try {
-    const { data, error } = await supabase
-      .from('subscriptions')
-      .select('plan_type, status')
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .maybeSingle();
+    try { 
+      const { data, error } = await supabase
+        .from('subscriptions')
+        .select('plan_type, status')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .maybeSingle();
 
-    if (error) throw error;
-
-    if (!data) return false; // ✅ No subscription found → definitely not active
-    return data.plan_type !== 'trial'; // true only if active and not trial
-  } catch (error: any) {
-    console.error('Error checking subscription:', error);
-    return false;
+      if (error) throw error;
+      return data?.plan_type !== 'trial';
+    } catch (error: any) {
+      console.error('Error checking subscription:', error);
+      return false;
+    }
   }
-}
 
   static getBasePackCost(): number {
     return this.STARTER_PACK_SUBSEQUENT_COST;
