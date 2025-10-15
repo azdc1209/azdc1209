@@ -278,7 +278,7 @@ export default function StarterPackOrdersAdmin() {
 
                 <div>
                   <h3 className="text-sm font-medium text-gray-700 mb-3">Update Status</h3>
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {statuses.map((status) => {
                       const currentIndex = StarterPackService.getStatusIndex(selectedOrder.order_status);
                       const statusIndex = StarterPackService.getStatusIndex(status.value);
@@ -286,48 +286,60 @@ export default function StarterPackOrdersAdmin() {
                       const isCurrent = status.value === selectedOrder.order_status;
                       const isNext = statusIndex === currentIndex + 1;
                       const canUpdate = isNext || isCurrent;
+                      const timestamp = selectedOrder.status_timestamps?.[status.value];
 
                       return (
-                        <button
-                          key={status.value}
-                          onClick={() => handleStatusUpdate(selectedOrder.id, status.value)}
-                          disabled={updating || (!canUpdate && !isCompleted)}
-                          className={`w-full p-3 rounded-lg border-2 text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-                            isCurrent
-                              ? 'border-[#E6A85C] bg-gradient-to-r from-[#FFF5EB] to-[#FFE8F3]'
-                              : isCompleted
-                              ? 'border-[#E6A85C] bg-gradient-to-r from-[#FFF5EB] to-[#FFE8F3]'
-                              : canUpdate
-                              ? 'border-gray-300 hover:border-[#E6A85C]'
-                              : 'border-gray-200 bg-gray-50'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span
-                              className={`font-medium ${
-                                isCurrent || isCompleted
-                                  ? 'text-gray-900'
-                                  : 'text-gray-700'
-                              }`}
-                            >
-                              {status.label}
-                            </span>
-                            {isCompleted && <Check className="w-5 h-5 text-[#E6A85C]" />}
-                            {isCurrent && (
-                              <span className="text-xs text-[#E85A9B] font-medium">Current</span>
+                        <div key={status.value} className="relative">
+                          <button
+                            onClick={() => handleStatusUpdate(selectedOrder.id, status.value)}
+                            disabled={updating || (!canUpdate && !isCompleted)}
+                            className={`w-full p-4 rounded-lg border-2 text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                              isCurrent
+                                ? 'border-[#E6A85C] bg-gradient-to-r from-[#FFF5EB] to-[#FFE8F3] shadow-sm'
+                                : isCompleted
+                                ? 'border-green-300 bg-green-50'
+                                : canUpdate
+                                ? 'border-gray-300 hover:border-[#E6A85C] hover:bg-gray-50'
+                                : 'border-gray-200 bg-gray-50'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span
+                                className={`font-semibold ${
+                                  isCurrent || isCompleted
+                                    ? 'text-gray-900'
+                                    : 'text-gray-600'
+                                }`}
+                              >
+                                {status.label}
+                              </span>
+                              {isCompleted && <Check className="w-5 h-5 text-green-600" />}
+                              {isCurrent && (
+                                <span className="flex items-center gap-1">
+                                  <div className="w-2 h-2 bg-[#E85A9B] rounded-full animate-pulse"></div>
+                                  <span className="text-xs text-[#E85A9B] font-medium">In Progress</span>
+                                </span>
+                              )}
+                            </div>
+                            {timestamp && (
+                              <p className="text-xs text-gray-600 flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                Completed: {new Date(timestamp).toLocaleString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </p>
                             )}
-                          </div>
-                          {selectedOrder.status_timestamps?.[status.value] && (
-                            <p className="text-xs text-gray-500 mt-1">
-                              {new Date(selectedOrder.status_timestamps[status.value]).toLocaleString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </p>
-                          )}
-                        </button>
+                            {!timestamp && (isCurrent || canUpdate) && (
+                              <p className="text-xs text-gray-500">
+                                {canUpdate && !isCurrent ? 'Click to mark as current status' : 'Currently in progress'}
+                              </p>
+                            )}
+                          </button>
+                        </div>
                       );
                     })}
                   </div>

@@ -61,15 +61,25 @@ function StarterPackContent() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedHistoryOrder, setSelectedHistoryOrder] = useState<StarterPackOrder | null>(null);
   const [pendingAddress, setPendingAddress] = useState<DeliveryAddress | null>(null);
+  const [totalCost, setTotalCost] = useState(0);
+  const [isFirstOrder, setIsFirstOrder] = useState(false);
+  const [basePackCost, setBasePackCost] = useState(0);
 
   useEffect(() => {
     if (user) {
       checkAccess();
       loadOrders();
+      checkFirstOrder();
       const interval = setInterval(loadOrders, 30000);
       return () => clearInterval(interval);
     }
   }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      calculateCost();
+    }
+  }, [includesTablet, isFirstOrder, hasAccess, user]);
 
   const checkAccess = async () => {
     try {
@@ -80,6 +90,28 @@ function StarterPackContent() {
       console.error('Error checking access:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const checkFirstOrder = async () => {
+    try {
+      const firstOrder = await StarterPackService.isFirstOrder(user!.id);
+      setIsFirstOrder(firstOrder);
+    } catch (error) {
+      console.error('Error checking first order:', error);
+    }
+  };
+
+  const calculateCost = async () => {
+    try {
+      const cost = await StarterPackService.calculateTotalCost(user!.id, includesTablet);
+      setTotalCost(cost);
+      const firstOrder = await StarterPackService.isFirstOrder(user!.id);
+      const hasPaidSub = await StarterPackService.hasActivePaidSubscription(user!.id);
+      const baseCost = StarterPackService.calculateTotalCostSync(firstOrder, hasPaidSub, false);
+      setBasePackCost(baseCost);
+    } catch (error) {
+      console.error('Error calculating cost:', error);
     }
   };
 
@@ -197,7 +229,6 @@ const response = await fetch(
     );
   }
 
-  const totalCost = StarterPackService.calculateTotalCost(includesTablet);
   const activeOrder = orders.find(
     (order) => order.payment_status === 'completed' && order.order_status !== 'delivered'
   );
@@ -235,7 +266,7 @@ const response = await fetch(
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Starter Pack</span>
-                  <span className="font-medium">0 AED</span>
+                  <span className="font-medium">{basePackCost} AED</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Tablet</span>
@@ -243,7 +274,7 @@ const response = await fetch(
                 </div>
                 <div className="border-t border-gray-300 pt-2 mt-2 flex justify-between">
                   <span className="font-semibold text-gray-900">Total</span>
-                  <span className="font-bold text-gray-900">499 AED</span>
+                  <span className="font-bold text-gray-900">{totalCost} AED</span>
                 </div>
               </div>
             </div>
@@ -267,7 +298,7 @@ const response = await fetch(
               disabled={isProcessing || !stripe}
               className="w-full bg-gradient-to-r from-[#E6A85C] to-[#E85A9B] text-white font-semibold py-4 rounded-xl hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isProcessing ? 'Processing Payment...' : 'Pay 499 AED'}
+              {isProcessing ? 'Processing Payment...' : `Pay ${totalCost} AED`}
             </button>
           </div>
         </div>
@@ -346,9 +377,23 @@ const response = await fetch(
                   <span className="text-lg font-medium text-gray-900">Total Cost</span>
                   <span className="text-3xl font-bold text-gray-900">{totalCost} AED</span>
                 </div>
+                {!isFirstOrder && !includesTablet && hasAccess && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                    <p className="text-sm text-blue-800">
+                      Your first starter pack was complimentary. Additional orders are 50 AED (tablet excluded).
+                    </p>
+                  </div>
+                )}
+                {isFirstOrder && hasAccess && !includesTablet && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+                    <p className="text-sm text-green-800">
+                      Your first starter pack is complimentary as a paid subscriber!
+                    </p>
+                  </div>
+                )}
                 <div className="flex items-center gap-2 text-sm text-gray-600 mb-4">
                   <Clock className="w-4 h-4" />
-                  <span>Estimated delivery: 9 hours from order time</span>
+                  <span>Delivered during business hours (Mon-Fri, 9 AM - 5 PM)</span>
                 </div>
                 <button
                   onClick={handlePlaceOrder}
@@ -495,27 +540,43 @@ function OrderTracking({ order, onUpdate }: { order: StarterPackOrder; onUpdate:
       )}
 
       <div className="relative">
+        <style>{`
+          @keyframes pulse-line {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 1; }
+          }
+          .pulse-animate {
+            animation: pulse-line 1.5s ease-in-out infinite;
+          }
+        `}</style>
         {stages.map((stage, index) => {
           const Icon = stage.icon;
-          const isActive = index <= currentIndex;
+          const isCompleted = index < currentIndex;
           const isCurrent = index === currentIndex;
+          const isActive = index <= currentIndex;
           const statusTimestamp = order.status_timestamps?.[stage.key];
 
           return (
             <div key={stage.key} className="relative flex items-center gap-4 pb-8 last:pb-0">
               {index < stages.length - 1 && (
-                <div
-                  className={`absolute left-6 top-12 w-0.5 h-full ${
-                    isActive ? 'bg-gradient-to-b from-[#E6A85C] to-[#E85A9B]' : 'bg-gray-300'
-                  }`}
-                />
+                <div className="absolute left-6 top-12 w-1 h-full bg-gray-200 rounded-full">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      isCompleted
+                        ? 'bg-gradient-to-b from-[#E6A85C] to-[#E85A9B] w-full'
+                        : isCurrent
+                        ? 'bg-gradient-to-b from-[#E6A85C] to-[#E85A9B] w-full pulse-animate'
+                        : 'w-0'
+                    }`}
+                  />
+                </div>
               )}
               <div
-                className={`relative z-10 w-12 h-12 rounded-full flex items-center justify-center ${
+                className={`relative z-10 w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ${
                   isActive
-                    ? 'bg-gradient-to-br from-[#E6A85C] to-[#E85A9B] text-white shadow-lg'
+                    ? 'bg-gradient-to-br from-[#E6A85C] to-[#E85A9B] text-white shadow-lg scale-110'
                     : 'bg-gray-200 text-gray-400'
-                }`}
+                } ${isCurrent ? 'ring-4 ring-[#E6A85C] ring-opacity-30' : ''}`}
               >
                 <Icon className="w-6 h-6" />
               </div>
@@ -527,8 +588,8 @@ function OrderTracking({ order, onUpdate }: { order: StarterPackOrder; onUpdate:
                   <p className="text-sm text-[#E85A9B] font-medium">In Progress</p>
                 )}
                 {statusTimestamp && (
-                  <p className="text-xs text-gray-500">
-                    {new Date(statusTimestamp).toLocaleString('en-US', {
+                  <p className="text-xs text-gray-500 mt-1">
+                    Completed: {new Date(statusTimestamp).toLocaleString('en-US', {
                       month: 'short',
                       day: 'numeric',
                       hour: '2-digit',

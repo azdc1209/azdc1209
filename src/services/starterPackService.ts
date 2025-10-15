@@ -16,6 +16,7 @@ export interface StarterPackOrder {
   order_status: 'pending' | 'received' | 'preparing' | 'configuring' | 'out_for_delivery' | 'delivered';
   includes_tablet: boolean;
   tablet_cost: number;
+  base_pack_cost: number;
   total_cost: number;
   payment_status: 'pending' | 'completed' | 'failed';
   stripe_payment_intent_id?: string;
@@ -27,13 +28,15 @@ export interface StarterPackOrder {
   delivery_emirate?: string;
   delivery_contact_number?: string;
   proof_of_delivery_url?: string;
+  is_first_free_order?: boolean;
   status_timestamps?: Record<string, string>;
   created_at: string;
   updated_at: string;
 }
 
 export class StarterPackService {
-  private static readonly STARTER_PACK_BASE_COST = 0;
+  private static readonly STARTER_PACK_FIRST_ORDER_COST = 0;
+  private static readonly STARTER_PACK_SUBSEQUENT_COST = 50;
   private static readonly TABLET_COST = 499;
 
   static async createOrder(
@@ -43,8 +46,14 @@ export class StarterPackService {
     restaurantId?: string
   ): Promise<StarterPackOrder> {
     try {
+      const isFirstOrder = await this.isFirstOrder(userId);
+      const hasActivePaidSubscription = await this.hasActivePaidSubscription(userId);
+
+      const basePackCost = (isFirstOrder && hasActivePaidSubscription)
+        ? this.STARTER_PACK_FIRST_ORDER_COST
+        : this.STARTER_PACK_SUBSEQUENT_COST;
       const tabletCost = includesTablet ? this.TABLET_COST : 0;
-      const totalCost = this.STARTER_PACK_BASE_COST + tabletCost;
+      const totalCost = basePackCost + tabletCost;
 
       let restaurantName = 'Unknown Restaurant';
       if (restaurantId) {
@@ -66,6 +75,9 @@ export class StarterPackService {
         }
       }
 
+      const estimatedDelivery = this.calculateEstimatedDeliveryDate(new Date());
+      const needsPayment = totalCost > 0;
+
       const { data, error } = await supabase
         .from('starter_pack_orders')
         .insert({
@@ -74,9 +86,12 @@ export class StarterPackService {
           restaurant_name: restaurantName,
           includes_tablet: includesTablet,
           tablet_cost: tabletCost,
+          base_pack_cost: basePackCost,
           total_cost: totalCost,
           order_status: 'received',
-          payment_status: includesTablet ? 'pending' : 'completed',
+          payment_status: needsPayment ? 'pending' : 'completed',
+          is_first_free_order: isFirstOrder && hasActivePaidSubscription && basePackCost === 0,
+          estimated_delivery: estimatedDelivery.toISOString(),
           delivery_address_line1: deliveryAddress.addressLine1,
           delivery_address_line2: deliveryAddress.addressLine2,
           delivery_city: deliveryAddress.city,
@@ -160,7 +175,19 @@ export class StarterPackService {
     status: 'pending' | 'received' | 'preparing' | 'configuring' | 'out_for_delivery' | 'delivered'
   ): Promise<void> {
     try {
-      const updateData: any = { order_status: status };
+      const { data: order } = await supabase
+        .from('starter_pack_orders')
+        .select('status_timestamps')
+        .eq('id', orderId)
+        .maybeSingle();
+
+      const timestamps = order?.status_timestamps || {};
+      timestamps[status] = new Date().toISOString();
+
+      const updateData: any = {
+        order_status: status,
+        status_timestamps: timestamps
+      };
 
       if (status === 'delivered') {
         updateData.delivered_at = new Date().toISOString();
@@ -193,8 +220,24 @@ export class StarterPackService {
     }
   }
 
-  static calculateTotalCost(includesTablet: boolean): number {
-    return this.STARTER_PACK_BASE_COST + (includesTablet ? this.TABLET_COST : 0);
+  static async calculateTotalCost(userId: string, includesTablet: boolean): Promise<number> {
+    const isFirstOrder = await this.isFirstOrder(userId);
+    const hasActivePaidSubscription = await this.hasActivePaidSubscription(userId);
+
+    const basePackCost = (isFirstOrder && hasActivePaidSubscription)
+      ? this.STARTER_PACK_FIRST_ORDER_COST
+      : this.STARTER_PACK_SUBSEQUENT_COST;
+    const tabletCost = includesTablet ? this.TABLET_COST : 0;
+
+    return basePackCost + tabletCost;
+  }
+
+  static calculateTotalCostSync(isFirstOrder: boolean, hasActivePaidSubscription: boolean, includesTablet: boolean): number {
+    const basePackCost = (isFirstOrder && hasActivePaidSubscription)
+      ? this.STARTER_PACK_FIRST_ORDER_COST
+      : this.STARTER_PACK_SUBSEQUENT_COST;
+    const tabletCost = includesTablet ? this.TABLET_COST : 0;
+    return basePackCost + tabletCost;
   }
 
   static getTabletCost(): number {
@@ -254,9 +297,29 @@ export class StarterPackService {
     }
   }
 
+  static calculateEstimatedDeliveryDate(orderDate: Date): Date {
+    const order = new Date(orderDate);
+    let deliveryDate = new Date(order);
+
+    const orderHour = order.getHours();
+
+    if (orderHour >= 17) {
+      deliveryDate.setDate(deliveryDate.getDate() + 1);
+      deliveryDate.setHours(10, 0, 0, 0);
+    } else {
+      deliveryDate.setHours(orderHour + 9, 0, 0, 0);
+    }
+
+    while (deliveryDate.getDay() === 0 || deliveryDate.getDay() === 6) {
+      deliveryDate.setDate(deliveryDate.getDate() + 1);
+      deliveryDate.setHours(10, 0, 0, 0);
+    }
+
+    return deliveryDate;
+  }
+
   static calculateEstimatedDelivery(orderDate: string): Date {
-    const orderTime = new Date(orderDate);
-    return new Date(orderTime.getTime() + 9 * 60 * 60 * 1000);
+    return this.calculateEstimatedDeliveryDate(new Date(orderDate));
   }
 
   static isDelayed(orderDate: string, currentStatus: string, estimatedDelivery: string): boolean {
@@ -280,6 +343,45 @@ export class StarterPackService {
     } else {
       return `We sincerely apologize for the delay. Your order is taking longer than expected. Please contact support for more information.`;
     }
+  }
+
+  static async isFirstOrder(userId: string): Promise<boolean> {
+    try {
+      const { data, error } = await supabase
+        .from('starter_pack_orders')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('payment_status', 'completed')
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+      return !data;
+    } catch (error: any) {
+      console.error('Error checking first order:', error);
+      return false;
+    }
+  }
+
+  static async hasActivePaidSubscription(userId: string): Promise<boolean> {
+    try {
+      const { data, error } = await supabase
+        .from('user_subscriptions')
+        .select('plan_type, status')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .maybeSingle();
+
+      if (error) throw error;
+      return data?.plan_type !== 'trial';
+    } catch (error: any) {
+      console.error('Error checking subscription:', error);
+      return false;
+    }
+  }
+
+  static getBasePackCost(): number {
+    return this.STARTER_PACK_SUBSEQUENT_COST;
   }
 }
  
