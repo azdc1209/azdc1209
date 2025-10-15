@@ -366,7 +366,7 @@ export class StarterPackService {
   static async hasActivePaidSubscription(userId: string): Promise<boolean> {
     try {
       const { data, error } = await supabase
-        .from('user_subscriptions')
+        .from('subscriptions')
         .select('plan_type, status')
         .eq('user_id', userId)
         .eq('status', 'active')
