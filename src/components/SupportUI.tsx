@@ -197,17 +197,30 @@ const SupportUI: React.FC = () => {
             });
           }
         } else if (payload.eventType === 'UPDATE' && payload.new) {
-          setSessions(prev => prev.map(session => 
-            session.id === payload.new.id ? payload.new : session
-          ));
-          
-          // Update selected session if it's the one being updated
-          if (selectedSession?.id === payload.new.id) {
-            setSelectedSession(payload.new);
+          const updatedSession = payload.new;
+
+          // If session is closed or inactive, remove it from active list
+          if (updatedSession.status === 'closed' || updatedSession.is_active === false) {
+            setSessions(prev => prev.filter(session => session.id !== updatedSession.id));
+
+            // Clear selected session immediately if it's the one being closed
+            if (selectedSession?.id === updatedSession.id) {
+              setSelectedSession(null);
+              setShowCloseChatModal(false);
+            }
+          } else {
+            setSessions(prev => prev.map(session =>
+              session.id === updatedSession.id ? updatedSession : session
+            ));
+
+            // Update selected session if it's the one being updated and still active
+            if (selectedSession?.id === updatedSession.id) {
+              setSelectedSession(updatedSession);
+            }
           }
         } else if (payload.eventType === 'DELETE' && payload.old) {
           setSessions(prev => prev.filter(session => session.id !== payload.old.id));
-          
+
           // Clear selected session if it was deleted
           if (selectedSession?.id === payload.old.id) {
             setSelectedSession(null);

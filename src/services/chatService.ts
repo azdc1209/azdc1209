@@ -213,7 +213,7 @@ export class ChatService {
   static async getRestaurantChatSessions(restaurantId: string): Promise<ChatSession[]> {
   try {
     console.log('🔍 Fetching chat sessions for restaurant:', restaurantId);
-    
+
     const { data, error } = await supabase
       .from('chat_sessions')
       .select(`
@@ -221,9 +221,9 @@ export class ChatService {
         restaurant:restaurants(name, slug)
       `)
       .eq('restaurant_id', restaurantId)
-      // .neq('status', 'closed')   // 👈 exclude closed 
-     
-      .order('last_message_at', { ascending: false });
+      .eq('is_active', true)
+      .neq('status', 'closed')
+      .order('last_message_at', { ascending: false});
 
     if (error) {
       console.error('❌ Error fetching restaurant chat sessions:', error);

@@ -130,7 +130,7 @@ function StarterPackContent() {
   };
 
   const handleAddressSubmit = async (address: DeliveryAddress) => {
-    if (includesTablet) {
+    if (totalCost > 0) {
       setPendingAddress(address);
       setShowAddressModal(false);
     } else {
@@ -145,24 +145,24 @@ function StarterPackContent() {
     try {
       const order = await StarterPackService.createOrder(user!.id, includesTablet, address);
 
-      if (includesTablet) {
+      if (order.total_cost > 0) {
         if (!stripe || !elements) {
           throw new Error('Stripe not initialized');
         }
 
-   const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session } } = await supabase.auth.getSession();
 
-const response = await fetch(
-  `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-starterpack-payment`,
-  {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${session?.access_token}`,
-    },
-    body: JSON.stringify({
-      amount: order.total_cost, // don’t multiply by 100!
-      metadata: { orderId: order.id, orderType: "starter_pack" },
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-starterpack-payment`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${session?.access_token}`,
+            },
+            body: JSON.stringify({
+              amount: order.total_cost,
+              metadata: { orderId: order.id, orderType: "starter_pack" },
             })
           }
         );

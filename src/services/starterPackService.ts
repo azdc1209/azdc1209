@@ -224,9 +224,7 @@ export class StarterPackService {
   static async getAllOrders(): Promise<StarterPackOrder[]> {
     try {
       const { data, error } = await supabase
-        .from('starter_pack_orders')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .rpc('get_all_starter_pack_orders_admin');
 
       if (error) throw error;
       return data || [];
